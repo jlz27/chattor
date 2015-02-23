@@ -1,4 +1,4 @@
-package chat;
+package client;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -6,44 +6,50 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectOutputStream;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-
 import java.util.Scanner;
 
-import service.KeyService;
-import network.SecureMessage;
-import network.SecureMessage.Type;
-import network.TorAddress;
+import protocol.DataType;
+import protocol.Message;
+import protocol.MessageType;
+import services.KeyBaseService;
+import util.Configuration;
 import network.TorNetwork;
 
-public final class ChatTorServer implements Runnable {
+public final class ChatClient implements Runnable {
 	private static final String TOR_ADDR = "127.0.0.1";
 	private static final int TOR_PORT = 9050;
 
 	private final ServerSocket socket;
 	private final TorNetwork network;
+	private final InetSocketAddress clientAddr;
 
-	private TorAddress address;
-	
 	public static void main(String args[]) throws NumberFormatException, IOException {
-		new ChatTorServer(Integer.parseInt(args[0]), args[1]).run();;
+		Configuration.initialize(args[0]);
+		
+		System.setProperty("javax.net.ssl.trustStore", Configuration.TRUSTSTORE);
+		System.setProperty("javax.net.ssl.trustStoreType", Configuration.TRUSTSTORE_TYPE);
+		System.setProperty("javax.net.ssl.trustStorePassword", "client");
+		
+		new ChatClient(Configuration.CLIENT_PORT, Configuration.CLIENT_DIR).run();;
 	}
 	
-	public ChatTorServer(int serverPort, String configDir) throws IOException {
+	public ChatClient(int serverPort, String configDir) throws IOException {
 		this.socket = new ServerSocket(serverPort);
 		this.network = new TorNetwork(TOR_ADDR, TOR_PORT);
-		this.address = new TorAddress(parseHostname(configDir), serverPort);
+		this.clientAddr = new InetSocketAddress(parseHostname(configDir), serverPort);
 	}
 
 	public void run() {
-		System.out.println("Starting server on port: " + socket.getLocalPort());
+		System.out.println("Listening on port: " + socket.getLocalPort());
 		Scanner scanner = new Scanner(System.in);
 		System.out.println("Please log in with username: ");
 	    String username = scanner.nextLine();
-	    KeyService keyService = new KeyService(network);
+	    KeyBaseService keyService = new KeyBaseService(network);
 	    keyService.retrieveKey(username);
-	    System.out.println("Registering server in directory: " + socket.getLocalPort());
+	    System.out.println("Registering in directory: " + socket.getLocalPort());
 		registerUser(username);
 		new Thread(new ChatSession(this.network, scanner)).start();
 		while(true) {
@@ -61,7 +67,10 @@ public final class ChatTorServer implements Runnable {
 		try {
 			directoryConnection = this.network.openDirectoryConnection();
 			ObjectOutputStream oos = new ObjectOutputStream(directoryConnection.getOutputStream());
-			oos.writeObject(new SecureMessage(username, this.address, Type.ADD));
+			Message addMessage = new Message(MessageType.ADD_ADDRESS);
+			addMessage.addData(DataType.USERNAME, username);
+			addMessage.addData(DataType.ADDRESS, clientAddr);
+			oos.writeObject(addMessage);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

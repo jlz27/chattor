@@ -1,15 +1,16 @@
-package chat;
+package client;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Scanner;
 
-import network.SecureMessage;
-import network.SecureMessage.Type;
-import network.TorAddress;
+import protocol.DataType;
+import protocol.Message;
+import protocol.MessageType;
 import network.TorNetwork;
 
 public final class ChatSession implements Runnable {
@@ -24,7 +25,7 @@ public final class ChatSession implements Runnable {
 	
 	public void run() {
 		while(true) {
-			TorAddress destAddr = null;
+			InetSocketAddress destAddr = null;
 			while (destAddr == null) {
 				System.out.println("Enter username: ");
 			    String username = scanner.nextLine();
@@ -32,7 +33,7 @@ public final class ChatSession implements Runnable {
 		    }
 		    Socket connect;
 			try {
-				connect = network.connect(destAddr.getAddress(), destAddr.getPort());
+				connect = network.unsafeConnect(destAddr.getHostString(), destAddr.getPort());
 				sendMessage(connect, scanner);
 			} catch (IOException e) {
 				e.printStackTrace();
@@ -41,14 +42,19 @@ public final class ChatSession implements Runnable {
 		}
 	}
 	
-	private TorAddress resolveUser(String username) {
+	private InetSocketAddress resolveUser(String username) {
 		try {
 			Socket socket = network.openDirectoryConnection();
 			ObjectOutputStream oos = new ObjectOutputStream(socket.getOutputStream());
-			oos.writeObject(new SecureMessage(username, null, Type.FIND));
+			Message findMessage = new Message(MessageType.FIND_ADDRESS);
+			findMessage.addData(DataType.USERNAME, username);
+			oos.writeObject(findMessage);
 			ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
-			SecureMessage message = (SecureMessage) ois.readObject();
-			return message.getAddress();
+			Message message = (Message) ois.readObject();
+			if (message.getType() != MessageType.ADDRESS_RESPONSE) {
+				throw new IllegalStateException("Unexpected message type: " + message.getType());
+			}
+			return (InetSocketAddress) message.getData().get(DataType.ADDRESS);
 		} catch (IOException | ClassNotFoundException e) {
 			e.printStackTrace();
 		}

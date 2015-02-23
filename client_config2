@@ -1,0 +1,5 @@
+trustStore keystore/trust_client1
+trustStoreType JCEKS
+clientDir /Users/jasonz/Documents/schoolwork/hidden_dir2
+clientPort 3001
+

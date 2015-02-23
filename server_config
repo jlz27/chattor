@@ -1,0 +1,4 @@
+keyStore keystore/key_server
+keyStoreType JCEKS
+maxConnections 100
+
