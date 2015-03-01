@@ -1,23 +1,18 @@
 package network;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.Socket;
 
-import javax.net.ServerSocketFactory;
-import javax.net.SocketFactory;
-import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.apache.http.client.HttpClient;
-import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
 import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLContexts;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 
@@ -32,12 +27,12 @@ public final class TorNetwork {
 	
 	public TorNetwork(String proxyAddr, int proxyPort) {
 		this.socksAddr = new InetSocketAddress(proxyAddr, proxyPort);
+		this.socketFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
 		Registry<ConnectionSocketFactory> reg = RegistryBuilder.<ConnectionSocketFactory>create()
-		        .register("http", new SocksSocketFactory(socksAddr))
+		        .register("https", new SocksSocketFactory(SSLContexts.createDefault(), socksAddr))
 		        .build();
 		PoolingHttpClientConnectionManager pm = new PoolingHttpClientConnectionManager(reg, new FakeDNSResolver());
 		this.client = HttpClients.custom().setConnectionManager(pm).build();
-		this.socketFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
 	}
 	
 	public HttpClient getHttpClient() {

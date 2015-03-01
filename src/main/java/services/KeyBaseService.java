@@ -8,9 +8,12 @@ import org.apache.http.ParseException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.util.EntityUtils;
+import org.bouncycastle.openpgp.PGPException;
+import org.bouncycastle.openpgp.PGPPublicKey;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import util.Util;
 import network.TorNetwork;
 
 public final class KeyBaseService {
@@ -25,17 +28,17 @@ public final class KeyBaseService {
 		this.network = network;
 	}
 	
-	public String retrieveKey(String username) {
+	public PGPPublicKey retrieveKey(String username) throws PGPException {
 		HttpClient httpClient = this.network.getHttpClient();
 		try {
 			HttpResponse response = httpClient.execute(
-					new HttpHost(KEYBASE_HOSTNAME, KEYBASE_PORT), new HttpGet(GET_URL + "jason&fields=public_keys"));
+					new HttpHost(KEYBASE_HOSTNAME, KEYBASE_PORT), new HttpGet(GET_URL + username + "&fields=public_keys"));
 			JSONObject obj = new JSONObject(EntityUtils.toString(response.getEntity()));
 			int status = obj.getJSONObject("status").getInt("code");
 			if (status == 0) {
 				JSONObject primaryKey = obj.getJSONObject("them").getJSONObject("public_keys").getJSONObject("primary");
 				System.out.println(primaryKey.getString("bundle"));
-				return primaryKey.toString();
+				return Util.getPGPPublicKey(primaryKey.getString("bundle"));
 			}
 		} catch (IOException | ParseException | JSONException e) {
 			e.printStackTrace();

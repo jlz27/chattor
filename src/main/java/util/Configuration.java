@@ -12,6 +12,7 @@ public final class Configuration {
 	public static String KEYSTORE_TYPE;
 	public static String TRUSTSTORE_TYPE;
 	public static String CLIENT_DIR;
+	public static String SECRET_KEY;
 	
 	public static int CLIENT_PORT; 
 	public static int MAX_CONNECTIONS; 
@@ -48,6 +49,9 @@ public final class Configuration {
 						break;
 					case "clientDir" :
 						CLIENT_DIR = pair[1];
+						break;
+					case "secretKey" :
+						SECRET_KEY = pair[1];
 						break;
 					case "clientPort" :
 						CLIENT_PORT = Integer.parseInt(pair[1]);

@@ -1,21 +1,29 @@
 package client;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 
+import org.bouncycastle.openpgp.PGPException;
+import org.bouncycastle.openpgp.PGPPrivateKey;
+import org.bouncycastle.openpgp.PGPPublicKey;
+
 import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
-import services.KeyBaseService;
+import services.PgpService;
 import util.Configuration;
+import util.Util;
 import network.TorNetwork;
 
 public final class ChatClient implements Runnable {
@@ -25,8 +33,9 @@ public final class ChatClient implements Runnable {
 	private final ServerSocket socket;
 	private final TorNetwork network;
 	private final InetSocketAddress clientAddr;
+	private final PGPPrivateKey privateKey;
 
-	public static void main(String args[]) throws NumberFormatException, IOException {
+	public static void main(String args[]) throws NumberFormatException, IOException, PGPException {
 		Configuration.initialize(args[0]);
 		
 		System.setProperty("javax.net.ssl.trustStore", Configuration.TRUSTSTORE);
@@ -36,10 +45,11 @@ public final class ChatClient implements Runnable {
 		new ChatClient(Configuration.CLIENT_PORT, Configuration.CLIENT_DIR).run();;
 	}
 	
-	public ChatClient(int serverPort, String configDir) throws IOException {
+	public ChatClient(int serverPort, String configDir) throws IOException, PGPException {
 		this.socket = new ServerSocket(serverPort);
 		this.network = new TorNetwork(TOR_ADDR, TOR_PORT);
 		this.clientAddr = new InetSocketAddress(parseHostname(configDir), serverPort);
+		this.privateKey = Util.getPGPPrivateKey(Configuration.SECRET_KEY);
 	}
 
 	public void run() {
@@ -47,10 +57,27 @@ public final class ChatClient implements Runnable {
 		Scanner scanner = new Scanner(System.in);
 		System.out.println("Please log in with username: ");
 	    String username = scanner.nextLine();
-	    KeyBaseService keyService = new KeyBaseService(network);
-	    keyService.retrieveKey(username);
+	    PgpService keyService = new PgpService(network);
+	    try {
+			PGPPublicKey pgpKey = keyService.retrieveKey(username);
+			ByteArrayOutputStream bos = new ByteArrayOutputStream();
+			ObjectOutputStream oos = new ObjectOutputStream(bos);
+			oos.writeObject(new Message(MessageType.ERROR_RESPONSE));
+			byte[] bytes = Util.encrypt(bos.toByteArray(), pgpKey);
+			byte[] decrypt = Util.decrypt(bytes, this.privateKey);
+			ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(decrypt));
+			Message m = (Message) ois.readObject();
+			System.out.println(m.getType());
+		} catch (PGPException e1) {
+			e1.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (ClassNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	    System.out.println("Registering in directory: " + socket.getLocalPort());
-		registerUser(username);
+		//registerUser(username);
 		new Thread(new ChatSession(this.network, scanner)).start();
 		while(true) {
 			try {

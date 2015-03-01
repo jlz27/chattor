@@ -5,15 +5,18 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.Socket;
 
+import javax.net.ssl.SSLContext;
+
 import org.apache.http.HttpHost;
-import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.protocol.HttpContext;
 
-public final class SocksSocketFactory extends PlainConnectionSocketFactory {
+public final class SocksSocketFactory extends SSLConnectionSocketFactory {
 
 	private final InetSocketAddress socksAddr;
 	
-	public SocksSocketFactory(InetSocketAddress socksAddr) {
+	public SocksSocketFactory(SSLContext sslContext, InetSocketAddress socksAddr) {
+		super(sslContext);
 		this.socksAddr = socksAddr;
 	}
 	
