@@ -1,4 +1,5 @@
 keyStore keystore/key_server
 keyStoreType JCEKS
+secretKey server_key
 maxConnections 100
 

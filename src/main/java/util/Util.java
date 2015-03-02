@@ -20,14 +20,11 @@ import org.bouncycastle.openpgp.PGPEncryptedDataList;
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPLiteralData;
 import org.bouncycastle.openpgp.PGPLiteralDataGenerator;
-import org.bouncycastle.openpgp.PGPObjectFactory;
 import org.bouncycastle.openpgp.PGPPrivateKey;
 import org.bouncycastle.openpgp.PGPPublicKey;
 import org.bouncycastle.openpgp.PGPPublicKeyEncryptedData;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
-import org.bouncycastle.openpgp.PGPSecretKey;
 import org.bouncycastle.openpgp.PGPSecretKeyRing;
-import org.bouncycastle.openpgp.PGPSecretKeyRingCollection;
 import org.bouncycastle.openpgp.PGPUtil;
 import org.bouncycastle.openpgp.bc.BcPGPObjectFactory;
 import org.bouncycastle.openpgp.bc.BcPGPPublicKeyRingCollection;
@@ -84,92 +81,70 @@ public final class Util {
 	}
 	
 	
-    public static byte[] decrypt(byte[] encrypted, PGPPrivateKey privateKey)
-            throws IOException, PGPException {
-        InputStream in = new ByteArrayInputStream(encrypted);
-
-        in = PGPUtil.getDecoderStream(in);
-
-        BcPGPObjectFactory pgpF = new BcPGPObjectFactory(in);
-        PGPEncryptedDataList enc = null;
-        Object o = pgpF.nextObject();
-
-        //
-        // the first object might be a PGP marker packet.
-        //
-        if (o instanceof PGPEncryptedDataList) {
-            enc = (PGPEncryptedDataList) o;
-        } else {
-            enc = (PGPEncryptedDataList) pgpF.nextObject();
-        }
-
-
-        //
-        // find the secret key
-        //
-        Iterator it = enc.getEncryptedDataObjects();
-        PGPPublicKeyEncryptedData pbe = (PGPPublicKeyEncryptedData) it.next();
-
-        BcPublicKeyDataDecryptorFactory decryptFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
-        
-        InputStream clear = pbe.getDataStream(decryptFactory);
-
-        BcPGPObjectFactory pgpFact = new BcPGPObjectFactory(clear);
-
-        PGPLiteralData ld = (PGPLiteralData) pgpFact.nextObject();
-
-        InputStream unc = ld.getInputStream();
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        int ch;
-
-        while ((ch = unc.read()) >= 0) {
-            out.write(ch);
-
-        }
-
-        byte[] returnBytes = out.toByteArray();
-        out.close();
-        return returnBytes;
+	@SuppressWarnings("unchecked")
+	public static Object decrypt(byte[] encrypted, PGPPrivateKey privateKey) {
+		try {
+	        InputStream in = PGPUtil.getDecoderStream(new ByteArrayInputStream(encrypted));
+	
+	        BcPGPObjectFactory pgpF = new BcPGPObjectFactory(in);
+	        PGPEncryptedDataList enc = null;
+	        Object o = pgpF.nextObject();
+	
+	        if (o instanceof PGPEncryptedDataList) {
+	            enc = (PGPEncryptedDataList) o;
+	        } else {
+	            enc = (PGPEncryptedDataList) pgpF.nextObject();
+	        }
+	        Iterator<PGPPublicKeyEncryptedData> it = enc.getEncryptedDataObjects();
+	        PGPPublicKeyEncryptedData pbe = (PGPPublicKeyEncryptedData) it.next();
+	        
+	        BcPublicKeyDataDecryptorFactory decryptFactory = new BcPublicKeyDataDecryptorFactory(privateKey);
+	        
+	        InputStream clear = pbe.getDataStream(decryptFactory);
+	        BcPGPObjectFactory pgpFact = new BcPGPObjectFactory(clear);
+	        PGPLiteralData ld = (PGPLiteralData) pgpFact.nextObject();
+	        InputStream unc = ld.getInputStream();
+	
+	        ObjectInputStream ois = new ObjectInputStream(unc);
+	        return ois.readObject();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
     }
 
-    public static byte[] encrypt(byte[] clearData, PGPPublicKey encKey)
-            throws IOException, PGPException {
-
-        ByteArrayOutputStream encOut = new ByteArrayOutputStream();
-
-        OutputStream out = encOut;
-
-        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-
-        PGPLiteralDataGenerator lData = new PGPLiteralDataGenerator();
-
-        // we want to generate compressed data. This might be a user option
-        // later,
-        // in which case we would pass in bOut.
-        OutputStream pOut = lData.open(bOut, // the compressed output stream
-                PGPLiteralData.BINARY, PGPLiteralData.CONSOLE, // "filename" to store
-                clearData.length, // length of clear data
-                new Date() // current time
-                );
-        pOut.write(clearData);
-
-        lData.close();
-        bOut.close();
-
-        PGPEncryptedDataGenerator generator = new PGPEncryptedDataGenerator(
-				new BcPGPDataEncryptorBuilder(PGPEncryptedDataGenerator.AES_256));
-		generator.addMethod(new BcPublicKeyKeyEncryptionMethodGenerator(encKey));
-		
-        byte[] bytes = bOut.toByteArray();
-
-        OutputStream cOut = generator.open(out, bytes.length);
-
-        cOut.write(bytes); // obtain the actual bytes from the compressed stream
-
-        cOut.close();
-        out.close();
-
-        return encOut.toByteArray();
+    public static byte[] encrypt(Object obj, PGPPublicKey encKey) {
+    	try {
+	    	ByteArrayOutputStream clearBytes = new ByteArrayOutputStream();
+	    	ObjectOutputStream oos = new ObjectOutputStream(clearBytes);
+	    	oos.writeObject(obj);
+	    	byte[] byteArray = clearBytes.toByteArray();
+	    	oos.close();
+	
+	    	ByteArrayOutputStream encOut = new ByteArrayOutputStream();
+	        OutputStream out = encOut;
+	        ByteArrayOutputStream bOut = new ByteArrayOutputStream();
+	        PGPLiteralDataGenerator lData = new PGPLiteralDataGenerator();
+	        OutputStream pOut = lData.open(bOut, PGPLiteralData.BINARY, PGPLiteralData.CONSOLE, 
+	        		byteArray.length, new Date());;
+	        
+	        pOut.write(byteArray);
+	        lData.close();
+	        bOut.close();
+	        PGPEncryptedDataGenerator generator = new PGPEncryptedDataGenerator(
+					new BcPGPDataEncryptorBuilder(PGPEncryptedDataGenerator.AES_256));
+			generator.addMethod(new BcPublicKeyKeyEncryptionMethodGenerator(encKey));
+			
+	        byte[] bytes = bOut.toByteArray();
+	        OutputStream cOut = generator.open(out, bytes.length);
+	        cOut.write(bytes);
+	
+	        cOut.close();
+	        out.close();
+	
+	        return encOut.toByteArray();
+    	} catch (Exception e) {
+        	throw new RuntimeException(e);
+        }
     }
 }

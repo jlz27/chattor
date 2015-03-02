@@ -1,11 +1,21 @@
 package server;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.SecureRandom;
+import java.security.SignedObject;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,10 +24,17 @@ import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 
+import org.bouncycastle.openpgp.PGPPublicKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import network.TorNetwork;
 import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
+import services.PgpService;
 import util.Configuration;
+import util.ObjectSigner;
 import util.Util;
 
 import com.google.common.cache.Cache;
@@ -25,24 +42,40 @@ import com.google.common.cache.CacheBuilder;
 
 
 public final class ChatServer {
+	private static final String TOR_ADDR = "127.0.0.1";
+	private static final int TOR_PORT = 9050;
 	private static final int SERVER_PORT = 15000;
+	private static final Logger LOGGER = LoggerFactory.getLogger(ChatServer.class);
 
+	private PrivateKey privateKey;
+	private TorNetwork torNetwork;
 	private SSLServerSocket serverSocket;
 	private Cache<String, InetSocketAddress> nameAddressCache;
 	private ExecutorService threadPool;
 	
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws IOException, KeyStoreException,
+			NoSuchAlgorithmException, CertificateException, UnrecoverableEntryException {
 		Configuration.initialize(args[0]);
 		char[] password = Util.readPassword();
 		System.setProperty("javax.net.ssl.keyStore", Configuration.KEYSTORE);
 		System.setProperty("javax.net.ssl.keyStoreType", Configuration.KEYSTORE_TYPE);
 		System.setProperty("javax.net.ssl.keyStorePassword", new String(password));
 		
-		new ChatServer(Configuration.MAX_CONNECTIONS).run();
+		KeyStore ks = KeyStore.getInstance(Configuration.KEYSTORE_TYPE);
+		FileInputStream keyStoreFile = new FileInputStream(Configuration.KEYSTORE);
+		ks.load(keyStoreFile, password);
+		KeyStore.ProtectionParameter protParam = new KeyStore.PasswordProtection(password);
+		KeyStore.PrivateKeyEntry pkEntry = (KeyStore.PrivateKeyEntry) ks.getEntry(Configuration.SECRET_KEY, protParam);
+		PrivateKey myPrivateKey = pkEntry.getPrivateKey();
+		
+		new ChatServer(myPrivateKey, Configuration.MAX_CONNECTIONS).run();
 	}
 	
-	public ChatServer(int maxThreads) throws IOException {
+	public ChatServer(PrivateKey privateKey, int maxThreads) throws IOException {
+		this.privateKey = privateKey;
 		this.threadPool = Executors.newFixedThreadPool(maxThreads);
+		this.torNetwork = new TorNetwork(TOR_ADDR, TOR_PORT);
+		// session timeout set to be 1 hour
 		initializeServer(SERVER_PORT, 3600);
 	}
 
@@ -51,9 +84,11 @@ public final class ChatServer {
 		while(true) {
 			try {
 				Socket connection = serverSocket.accept();
+				// set timeout to be 1 minute
+				connection.setSoTimeout(1000*60);
 				this.threadPool.execute(new ConnectionHandler(connection));
 			} catch (IOException e) {
-				System.err.println("Network error: bad connection.");
+				LOGGER.error("Network error: bad connection.");
 			}
 		}
 	}
@@ -81,20 +116,57 @@ public final class ChatServer {
 			this.connection = connection;
 		}
 		
+		private boolean sendChallenge(String username, ObjectInputStream ois, ObjectOutputStream oos) {
+			PgpService keyService = new PgpService(ChatServer.this.torNetwork);
+			PGPPublicKey userPublicKey = keyService.retrieveKey(username);
+			Message challenge = new Message(MessageType.ADD_CHALLENGE);
+			SecureRandom secureRandom;
+			try {
+				secureRandom = SecureRandom.getInstance("SHA1PRNG");
+				byte[] challengeBytes = new byte[256];
+				secureRandom.nextBytes(challengeBytes);
+				String plainText = new String(challengeBytes, StandardCharsets.UTF_8);
+				byte[] encrypted = Util.encrypt(plainText, userPublicKey);
+				challenge.addData(DataType.CHALLENGE_DATA, encrypted);
+				oos.writeObject(challenge);
+				
+				// read challenge response
+				Message response = (Message) ois.readObject();
+				if (response.getType() != MessageType.CHALLENGE_RESPONSE) {
+					return false;
+				}
+				String responseText = (String) response.getData().get(DataType.CHALLENGE_RESPONSE);
+				return plainText.equals(responseText);
+			} catch (NoSuchAlgorithmException | IOException | ClassNotFoundException e) {
+				LOGGER.debug("add address challenge error");
+			}
+			return false;
+		}
+		
 		public void run() {
 			try {
 				final ObjectInputStream inputStream = new ObjectInputStream(this.connection.getInputStream());
+				ObjectOutputStream oos = new ObjectOutputStream(this.connection.getOutputStream());
 				Message message = (Message) inputStream.readObject();
 				Map<DataType, Serializable> dataMap = message.getData();
 				Message response = null;
 				switch(message.getType()) {
 				case ADD_ADDRESS: {
 					String username = (String) dataMap.get(DataType.USERNAME);
-					InetSocketAddress address = (InetSocketAddress) dataMap.get(DataType.ADDRESS);
-					if (ChatServer.this.nameAddressCache.getIfPresent(username) == null) {
-						System.out.println("Registering username: " + username + 
-								" with address: " + address);
-						ChatServer.this.nameAddressCache.put(username, address);
+					// verify username via challenge
+					if (sendChallenge(username, inputStream, oos)) {
+						InetSocketAddress address = (InetSocketAddress) dataMap.get(DataType.ADDRESS);
+						if (ChatServer.this.nameAddressCache.getIfPresent(username) == null) {
+							System.out.println("Registering username: " + username + 
+									" with address: " + address);
+							ChatServer.this.nameAddressCache.put(username, address);
+							Message header = new Message(MessageType.ADD_ADDRESS);
+							header.addData(DataType.USERNAME, username);
+							header.addData(DataType.ADDRESS, address);
+							SignedObject signedObj = ObjectSigner.signObject(header, ChatServer.this.privateKey);
+							response = new Message(MessageType.ADDRESS_RESPONSE);
+							response.addData(DataType.ADDRESS_HEADER, signedObj);
+						}
 					}
 					break;
 				}
@@ -110,7 +182,6 @@ public final class ChatServer {
 					System.err.println("Unknonw directory server operation type: " + message.getType());
 				}
 				if (response != null) {
-					ObjectOutputStream oos = new ObjectOutputStream(this.connection.getOutputStream());
 					oos.writeObject(response);
 				}
 				this.connection.close();

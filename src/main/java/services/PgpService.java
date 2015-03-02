@@ -28,7 +28,7 @@ public final class PgpService {
 		this.network = network;
 	}
 	
-	public PGPPublicKey retrieveKey(String username) throws PGPException {
+	public PGPPublicKey retrieveKey(String username) {
 		HttpClient httpClient = this.network.getHttpClient();
 		try {
 			HttpResponse response = httpClient.execute(
@@ -37,11 +37,11 @@ public final class PgpService {
 				String responseString = EntityUtils.toString(response.getEntity());
 				Matcher matcher = KEY_PATTERN.matcher(responseString);
 				if (matcher.find()) {
-					System.out.println(matcher.group());
+//					System.out.println(matcher.group());
 					return Util.getPGPPublicKey(matcher.group());
 				}
 			}
-		} catch (IOException | ParseException e) {
+		} catch (IOException | ParseException | PGPException e) {
 			e.printStackTrace();
 		}
 		return null;

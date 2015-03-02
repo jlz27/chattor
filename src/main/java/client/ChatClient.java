@@ -1,7 +1,5 @@
 package client;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -12,21 +10,33 @@ import java.io.ObjectOutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.SignedObject;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
 import java.util.Scanner;
 
 import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPPrivateKey;
-import org.bouncycastle.openpgp.PGPPublicKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
-import services.PgpService;
+import server.ChatServer;
 import util.Configuration;
+import util.ObjectSigner;
 import util.Util;
 import network.TorNetwork;
 
 public final class ChatClient implements Runnable {
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(ChatClient.class);
 	private static final String TOR_ADDR = "127.0.0.1";
 	private static final int TOR_PORT = 9050;
 
@@ -34,22 +44,31 @@ public final class ChatClient implements Runnable {
 	private final TorNetwork network;
 	private final InetSocketAddress clientAddr;
 	private final PGPPrivateKey privateKey;
+	private final PublicKey serverPublicKey;
 
-	public static void main(String args[]) throws NumberFormatException, IOException, PGPException {
+	public static void main(String args[]) throws NumberFormatException, IOException, PGPException, KeyStoreException,
+			NoSuchAlgorithmException, CertificateException, UnrecoverableEntryException {
 		Configuration.initialize(args[0]);
 		
 		System.setProperty("javax.net.ssl.trustStore", Configuration.TRUSTSTORE);
 		System.setProperty("javax.net.ssl.trustStoreType", Configuration.TRUSTSTORE_TYPE);
 		System.setProperty("javax.net.ssl.trustStorePassword", "client");
 		
-		new ChatClient(Configuration.CLIENT_PORT, Configuration.CLIENT_DIR).run();;
+		KeyStore ks = KeyStore.getInstance(Configuration.TRUSTSTORE_TYPE);
+		FileInputStream keyStoreFile = new FileInputStream(Configuration.TRUSTSTORE);
+		ks.load(keyStoreFile, "client".toCharArray());
+		KeyStore.TrustedCertificateEntry pkEntry = (KeyStore.TrustedCertificateEntry) ks.getEntry("server_key", null);
+		PublicKey serverPublicKey = pkEntry.getTrustedCertificate().getPublicKey();
+		
+		new ChatClient(serverPublicKey, Configuration.CLIENT_PORT, Configuration.CLIENT_DIR).run();;
 	}
 	
-	public ChatClient(int serverPort, String configDir) throws IOException, PGPException {
+	public ChatClient(PublicKey serverPublicKey, int serverPort, String configDir) throws IOException, PGPException {
 		this.socket = new ServerSocket(serverPort);
 		this.network = new TorNetwork(TOR_ADDR, TOR_PORT);
 		this.clientAddr = new InetSocketAddress(parseHostname(configDir), serverPort);
 		this.privateKey = Util.getPGPPrivateKey(Configuration.SECRET_KEY);
+		this.serverPublicKey = serverPublicKey;
 	}
 
 	public void run() {
@@ -57,27 +76,9 @@ public final class ChatClient implements Runnable {
 		Scanner scanner = new Scanner(System.in);
 		System.out.println("Please log in with username: ");
 	    String username = scanner.nextLine();
-	    PgpService keyService = new PgpService(network);
-	    try {
-			PGPPublicKey pgpKey = keyService.retrieveKey(username);
-			ByteArrayOutputStream bos = new ByteArrayOutputStream();
-			ObjectOutputStream oos = new ObjectOutputStream(bos);
-			oos.writeObject(new Message(MessageType.ERROR_RESPONSE));
-			byte[] bytes = Util.encrypt(bos.toByteArray(), pgpKey);
-			byte[] decrypt = Util.decrypt(bytes, this.privateKey);
-			ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(decrypt));
-			Message m = (Message) ois.readObject();
-			System.out.println(m.getType());
-		} catch (PGPException e1) {
-			e1.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (ClassNotFoundException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
 	    System.out.println("Registering in directory: " + socket.getLocalPort());
-		//registerUser(username);
+		SignedObject header = registerUser(username);
+		Message signedHeader = (Message) ObjectSigner.verifyObject(header, this.serverPublicKey);
 		new Thread(new ChatSession(this.network, scanner)).start();
 		while(true) {
 			try {
@@ -89,18 +90,37 @@ public final class ChatClient implements Runnable {
 		}
 	}
 	
-	private void registerUser(String username) {
+	private SignedObject registerUser(String username) {
 		Socket directoryConnection;
 		try {
 			directoryConnection = this.network.openDirectoryConnection();
 			ObjectOutputStream oos = new ObjectOutputStream(directoryConnection.getOutputStream());
+			ObjectInputStream ois = new ObjectInputStream(directoryConnection.getInputStream());
 			Message addMessage = new Message(MessageType.ADD_ADDRESS);
 			addMessage.addData(DataType.USERNAME, username);
 			addMessage.addData(DataType.ADDRESS, clientAddr);
 			oos.writeObject(addMessage);
-		} catch (IOException e) {
-			e.printStackTrace();
+			
+			// read challege from server
+			Message challenge = (Message) ois.readObject();
+			if (challenge.getType() != MessageType.ADD_CHALLENGE) {
+				LOGGER.error("Did not receive challenge from server");
+			}
+			byte[] encrypted = (byte[]) challenge.getData().get(DataType.CHALLENGE_DATA);
+			String plainText = (String) Util.decrypt(encrypted, this.privateKey);
+			Message response = new Message(MessageType.CHALLENGE_RESPONSE);
+			response.addData(DataType.CHALLENGE_RESPONSE, plainText);
+			oos.writeObject(response);
+			
+			Message headerResponse = (Message) ois.readObject();
+			if (headerResponse.getType() != MessageType.ADDRESS_RESPONSE) {
+				LOGGER.error("Did not receive address response from server");
+			}
+			return (SignedObject) headerResponse.getData().get(DataType.ADDRESS_HEADER);
+		} catch (IOException | ClassNotFoundException e) {
+			LOGGER.error("Register user failed");
 		}
+		return null;
 	}
 	
 	private String parseHostname(String configDir) {
