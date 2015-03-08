@@ -61,6 +61,9 @@ public final class ChatServer {
 		System.setProperty("javax.net.ssl.keyStore", Configuration.KEYSTORE);
 		System.setProperty("javax.net.ssl.keyStoreType", Configuration.KEYSTORE_TYPE);
 		System.setProperty("javax.net.ssl.keyStorePassword", new String(password));
+		System.setProperty("javax.net.ssl.trustStore", Configuration.TRUSTSTORE);
+		System.setProperty("javax.net.ssl.trustStoreType", Configuration.TRUSTSTORE_TYPE);
+		System.setProperty("javax.net.ssl.trustStorePassword", "client");
 		
 		KeyStore ks = KeyStore.getInstance(Configuration.KEYSTORE_TYPE);
 		FileInputStream keyStoreFile = new FileInputStream(Configuration.KEYSTORE);

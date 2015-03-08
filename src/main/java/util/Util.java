@@ -61,6 +61,15 @@ public final class Util {
 		return System.console().readPassword();
 	}
 	
+	public static int getRandomInt() {
+		SecureRandom secureRandom;
+		try {
+			secureRandom = SecureRandom.getInstance("SHA1PRNG");
+			return secureRandom.nextInt();
+		} catch (NoSuchAlgorithmException e) {
+			throw new RuntimeException(e);
+		}
+	}
 	public static String getRandomChallenge() {
 		try {
 			SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG");

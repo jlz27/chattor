@@ -21,6 +21,8 @@ import org.bouncycastle.openpgp.PGPPrivateKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Joiner;
+
 import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
@@ -88,7 +90,6 @@ public final class ChatClient implements Runnable {
 					case "/m" :
 					{
 						String destName = split[1];
-						String message = split[2];
 						if (!this.openSessions.containsKey(destName)) {
 							InetSocketAddress destHost = ClientUtils.resolveUser(network, destName);
 							SessionID sessionID = new SessionID(destName, destHost.toString(), CLIENT_PROTOCOL);
@@ -97,6 +98,8 @@ public final class ChatClient implements Runnable {
 							this.openSessions.put(destName, secureSession);
 						}
 						ChatSession chatSession = this.openSessions.get(destName);
+						int index = nextLine.indexOf(destName);
+						String message = nextLine.substring(index + destName.length() + 1);
 						chatSession.sendMessage(message);
 						break;
 					}

@@ -13,6 +13,7 @@ public final class Configuration {
 	public static String TRUSTSTORE_TYPE;
 	public static String CLIENT_DIR;
 	public static String SECRET_KEY;
+	public static String KEY_SERVER_LIST;
 	
 	public static int CLIENT_PORT; 
 	public static int MAX_CONNECTIONS; 
@@ -58,6 +59,9 @@ public final class Configuration {
 						break;
 					case "maxConnections" :
 						MAX_CONNECTIONS = Integer.parseInt(pair[1]);
+						break;
+					case "keyServerList" :
+						KEY_SERVER_LIST = pair[1];
 						break;
 					}
 					line = reader.readLine();

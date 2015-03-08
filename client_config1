@@ -3,3 +3,4 @@ trustStoreType JCEKS
 clientDir /Users/jasonz/Documents/schoolwork/hidden_dir1
 clientPort 3000
 secretKey keystore/secretKey1.asc
+keyServerList keyserver_list.txt
