@@ -37,7 +37,6 @@ public final class PgpService {
 				String responseString = EntityUtils.toString(response.getEntity());
 				Matcher matcher = KEY_PATTERN.matcher(responseString);
 				if (matcher.find()) {
-//					System.out.println(matcher.group());
 					return Util.getPGPPublicKey(matcher.group());
 				}
 			}

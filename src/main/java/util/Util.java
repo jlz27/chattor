@@ -12,6 +12,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Date;
 import java.util.Iterator;
 
@@ -35,6 +37,12 @@ import org.bouncycastle.openpgp.operator.bc.BcPGPDataEncryptorBuilder;
 import org.bouncycastle.openpgp.operator.bc.BcPGPDigestCalculatorProvider;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
+import org.bouncycastle.util.encoders.Base64Encoder;
+
+import protocol.DataType;
+import protocol.Message;
+import protocol.MessageType;
+import services.KeyManager;
 
 public final class Util {
 
@@ -51,6 +59,20 @@ public final class Util {
 		}
 		System.out.println("Enter server password: ");
 		return System.console().readPassword();
+	}
+	
+	public static String getRandomChallenge() {
+		try {
+			SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG");
+			byte[] challengeBytes = new byte[1024];
+			secureRandom.nextBytes(challengeBytes);
+			Base64Encoder encoder = new Base64Encoder();
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			encoder.encode(challengeBytes, 0, 1024, baos);
+			return new String(baos.toByteArray(), StandardCharsets.UTF_8);
+		} catch (NoSuchAlgorithmException | IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 	
 	@SuppressWarnings("rawtypes")
@@ -108,9 +130,8 @@ public final class Util {
 	        ObjectInputStream ois = new ObjectInputStream(unc);
 	        return ois.readObject();
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
-		return null;
     }
 
     public static byte[] encrypt(Object obj, PGPPublicKey encKey) {

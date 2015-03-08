@@ -6,5 +6,6 @@ public enum DataType {
 	ADDRESS,			// InetSocketAddress
 	ADDRESS_HEADER,		// SignedObject
 	CHALLENGE_DATA, 	// byte[]
-	CHALLENGE_RESPONSE, //String
+	CHALLENGE_RESPONSE, // String
+	OTR_CHUNK			// String
 }

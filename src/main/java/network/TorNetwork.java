@@ -16,6 +16,8 @@ import org.apache.http.conn.ssl.SSLContexts;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 
+import util.ConsoleHelper;
+
 public final class TorNetwork {
 	private static final String DIRECTORY_ADDRESS = "n2bfjefdozxmn76n.onion";
 	private static final int DIRECTORY_PORT = 15000;
@@ -54,7 +56,7 @@ public final class TorNetwork {
 	}
 	
 	public Socket unsafeConnect(String targetHostname, int targetPort) throws IOException {
-		System.out.println("Opening connection to " + targetHostname + ":" + targetPort
+		ConsoleHelper.printBlue("Opening connection to " + targetHostname + ":" + targetPort
 				+ " via proxy " + this.socksAddr);
 		Proxy proxy = new Proxy(Proxy.Type.SOCKS, socksAddr);
 		Socket proxySocket = new Socket(proxy);

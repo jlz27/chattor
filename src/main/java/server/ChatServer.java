@@ -32,6 +32,7 @@ import network.TorNetwork;
 import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
+import services.KeyManager;
 import services.PgpService;
 import util.Configuration;
 import util.ObjectSigner;
@@ -117,17 +118,12 @@ public final class ChatServer {
 		}
 		
 		private boolean sendChallenge(String username, ObjectInputStream ois, ObjectOutputStream oos) {
-			PgpService keyService = new PgpService(ChatServer.this.torNetwork);
-			PGPPublicKey userPublicKey = keyService.retrieveKey(username);
-			Message challenge = new Message(MessageType.ADD_CHALLENGE);
-			SecureRandom secureRandom;
+			KeyManager keyService = KeyManager.getKeyManager(torNetwork);
 			try {
-				secureRandom = SecureRandom.getInstance("SHA1PRNG");
-				byte[] challengeBytes = new byte[256];
-				secureRandom.nextBytes(challengeBytes);
-				String plainText = new String(challengeBytes, StandardCharsets.UTF_8);
-				byte[] encrypted = Util.encrypt(plainText, userPublicKey);
-				challenge.addData(DataType.CHALLENGE_DATA, encrypted);
+				String plainText = Util.getRandomChallenge();
+				Message challenge = new Message(MessageType.CHALLENGE);
+				byte[] cipherText = Util.encrypt(plainText, keyService.getPgpPublicKey(username));
+				challenge.addData(DataType.CHALLENGE_DATA, cipherText);
 				oos.writeObject(challenge);
 				
 				// read challenge response
@@ -137,7 +133,7 @@ public final class ChatServer {
 				}
 				String responseText = (String) response.getData().get(DataType.CHALLENGE_RESPONSE);
 				return plainText.equals(responseText);
-			} catch (NoSuchAlgorithmException | IOException | ClassNotFoundException e) {
+			} catch (IOException | ClassNotFoundException e) {
 				LOGGER.debug("add address challenge error");
 			}
 			return false;
@@ -156,17 +152,15 @@ public final class ChatServer {
 					// verify username via challenge
 					if (sendChallenge(username, inputStream, oos)) {
 						InetSocketAddress address = (InetSocketAddress) dataMap.get(DataType.ADDRESS);
-						if (ChatServer.this.nameAddressCache.getIfPresent(username) == null) {
-							System.out.println("Registering username: " + username + 
-									" with address: " + address);
-							ChatServer.this.nameAddressCache.put(username, address);
-							Message header = new Message(MessageType.ADD_ADDRESS);
-							header.addData(DataType.USERNAME, username);
-							header.addData(DataType.ADDRESS, address);
-							SignedObject signedObj = ObjectSigner.signObject(header, ChatServer.this.privateKey);
-							response = new Message(MessageType.ADDRESS_RESPONSE);
-							response.addData(DataType.ADDRESS_HEADER, signedObj);
-						}
+						System.out.println("Registering username: " + username + 
+								" with address: " + address);
+						ChatServer.this.nameAddressCache.put(username, address);
+						Message header = new Message(MessageType.ADD_ADDRESS);
+						header.addData(DataType.USERNAME, username);
+						header.addData(DataType.ADDRESS, address);
+						SignedObject signedObj = ObjectSigner.signObject(header, ChatServer.this.privateKey);
+						response = new Message(MessageType.ADDRESS_RESPONSE);
+						response.addData(DataType.ADDRESS_HEADER, signedObj);
 					}
 					break;
 				}
