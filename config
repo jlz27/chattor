@@ -1,0 +1,3 @@
+clientDir /home/username/chattor
+clientPort 3000
+secretKey secretKey.asc
