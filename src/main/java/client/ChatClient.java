@@ -110,6 +110,9 @@ public final class ChatClient implements Runnable {
 							ConsoleHelper.printGreen("Using existing connection.", true);
 						}
 						curUser = destName;
+						if (curUser != null) {
+							ConsoleHelper.printGreen("Switched conversation to: " + curUser, true);
+						}
 						if (split.length > 2) {
 							ChatSession chatSession = this.openSessions.get(destName);
 							int index = nextLine.indexOf(destName);
@@ -121,12 +124,12 @@ public final class ChatClient implements Runnable {
 					default:
 					{
 						if (curUser == null) {
-							ConsoleHelper.printRed("No currently active conversation");
+							ConsoleHelper.printRed("No currently active conversation.");
 							continue;
 						}
 						ChatSession chatSession = this.openSessions.get(curUser);
 						if (chatSession == null) {
-							ConsoleHelper.printRed("Session [" + curUser + "] is not currently connected.");
+							ConsoleHelper.printRed("No connection with " + curUser + " currently.");
 							continue;
 						}
 						chatSession.sendMessage(nextLine);
