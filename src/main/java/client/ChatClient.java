@@ -2,7 +2,6 @@ package client;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -17,36 +16,29 @@ import java.util.Map;
 import java.util.Scanner;
 
 import org.bouncycastle.openpgp.PGPException;
-import org.bouncycastle.openpgp.PGPPrivateKey;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Joiner;
 
 import protocol.DataType;
 import protocol.Message;
-import protocol.MessageType;
 import services.KeyManager;
 import util.Configuration;
 import util.ConsoleHelper;
 import util.ObjectSigner;
 import util.Util;
-import net.java.otr4j.OtrSessionManager;
-import net.java.otr4j.OtrSessionManagerImpl;
 import net.java.otr4j.session.Session;
 import net.java.otr4j.session.SessionID;
+import net.java.otr4j.session.SessionImpl;
 import network.TorNetwork;
 
 public final class ChatClient implements Runnable {
-	private static final Logger LOGGER = LoggerFactory.getLogger(ChatClient.class);
 	private static final String TOR_ADDR = "127.0.0.1";
 	private static final int TOR_PORT = 9050;
 	private static final String CLIENT_PROTOCOL = "CTORv1";
 
+	private static ChatClient client;
+	
 	private final ServerSocket socket;
 	private final TorNetwork network;
 	private final InetSocketAddress clientAddr;
-	private final OtrSessionManager sessionManager;
 	private final Map<String, ChatSession> openSessions;
 	
 	private String clientName;
@@ -59,14 +51,18 @@ public final class ChatClient implements Runnable {
 		System.setProperty("javax.net.ssl.trustStoreType", Configuration.TRUSTSTORE_TYPE);
 		System.setProperty("javax.net.ssl.trustStorePassword", "client");
 		
-		new ChatClient(Configuration.CLIENT_PORT, Configuration.CLIENT_DIR).run();;
+		client = new ChatClient(Configuration.CLIENT_PORT, Configuration.CLIENT_DIR);
+		client.run();
 	}
 	
-	public ChatClient(int serverPort, String configDir) throws IOException, PGPException {
+	public static ChatClient getInstance() {
+		return client;
+	}
+	
+	private ChatClient(int serverPort, String configDir) throws IOException, PGPException {
 		this.socket = new ServerSocket(serverPort);
 		this.network = new TorNetwork(TOR_ADDR, TOR_PORT);
 		this.clientAddr = new InetSocketAddress(ClientUtils.parseHostname(configDir), serverPort);
-		this.sessionManager = new OtrSessionManagerImpl(ClientOtrEngine.getInstance(network));
 		this.openSessions = new HashMap<String, ChatSession>();
 	}
 
@@ -77,76 +73,73 @@ public final class ChatClient implements Runnable {
 		ConsoleHelper.printCyan("Please log in with username: ");
 	    clientName = scanner.nextLine();
 	    ConsoleHelper.printBlue("Registering in directory: " + socket.getLocalPort());
-		SignedObject header = registerUser(clientName);
-		
+		SignedObject header = ClientUtils.registerUser(network, clientAddr, clientName);
+		if (header == null) {
+			System.exit(1);
+		}
 		new Thread(new ConnectionListener()).start();
 		// simple REPL like environment
-		ConsoleHelper.printCyan("Ready for commands:");
+		ConsoleHelper.printCyan("Use /n <user name> <message> to start new conversation.");
+		String curUser = null;
 		while (!isFinished) {
 			try {
 				String nextLine = scanner.nextLine();
 				String[] split = nextLine.split(" ");
 				switch(split[0]) {
-					case "/m" :
+					case "/n" :
 					{
 						String destName = split[1];
 						if (!this.openSessions.containsKey(destName)) {
 							InetSocketAddress destHost = ClientUtils.resolveUser(network, destName);
+							if (destHost == null) {
+								ConsoleHelper.printRed("Unknown user: " + destName);
+								continue;
+							}
 							SessionID sessionID = new SessionID(destName, destHost.toString(), CLIENT_PROTOCOL);
-							Session session = sessionManager.getSession(sessionID);
-							ChatSession secureSession = new ChatSession(this.network, session, header);
+							Session session = new SessionImpl(sessionID, ClientOtrEngine.getInstance(network));
+							ChatSession secureSession = new ChatSession(this.network, session);
+							if (!secureSession.startEncryptedSession(header)) {
+								continue;
+							}
 							this.openSessions.put(destName, secureSession);
 						}
-						ChatSession chatSession = this.openSessions.get(destName);
-						int index = nextLine.indexOf(destName);
-						String message = nextLine.substring(index + destName.length() + 1);
-						chatSession.sendMessage(message);
+						curUser = destName;
+						if (split.length > 2) {
+							ChatSession chatSession = this.openSessions.get(destName);
+							int index = nextLine.indexOf(destName);
+							String message = nextLine.substring(index + destName.length() + 1);
+							chatSession.sendMessage(message);
+						}
 						break;
 					}
-					default: 
-						ConsoleHelper.printRed("Unknown command");
+					default:
+					{
+						if (curUser == null) {
+							ConsoleHelper.printRed("No currently active conversation");
+							continue;
+						}
+						ChatSession chatSession = this.openSessions.get(curUser);
+						if (chatSession == null) {
+							ConsoleHelper.printRed("Session [" + curUser + "] is not currently connected.");
+							continue;
+						}
+						chatSession.sendMessage(nextLine);
+					}
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
-				ConsoleHelper.printRed("Illegal command");
+				ConsoleHelper.printRed("An error has occurred during the previous operation.");
 			}
 		}
 		scanner.close();
 
 	}
 	
-	private SignedObject registerUser(String username) {
-		KeyManager keyManager = KeyManager.getKeyManager(network);
-		Socket directoryConnection;
-		try {
-			directoryConnection = this.network.openDirectoryConnection();
-			ObjectOutputStream oos = new ObjectOutputStream(directoryConnection.getOutputStream());
-			ObjectInputStream ois = new ObjectInputStream(directoryConnection.getInputStream());
-			Message addMessage = new Message(MessageType.ADD_ADDRESS);
-			addMessage.addData(DataType.USERNAME, username);
-			addMessage.addData(DataType.ADDRESS, clientAddr);
-			oos.writeObject(addMessage);
-			
-			// read challege from server
-			Message challenge = (Message) ois.readObject();
-			if (challenge.getType() != MessageType.CHALLENGE) {
-				ConsoleHelper.printRed("Did not receive challenge from server");
-			}
-			byte[] encrypted = (byte[]) challenge.getData().get(DataType.CHALLENGE_DATA);
-			String plainText = (String) Util.decrypt(encrypted, keyManager.getPGPPrivateKey());
-			Message response = new Message(MessageType.CHALLENGE_RESPONSE);
-			response.addData(DataType.CHALLENGE_RESPONSE, plainText);
-			oos.writeObject(response);
-			
-			Message headerResponse = (Message) ois.readObject();
-			if (headerResponse.getType() != MessageType.ADDRESS_RESPONSE) {
-				ConsoleHelper.printRed("Did not receive address response from server");
-			}
-			return (SignedObject) headerResponse.getData().get(DataType.ADDRESS_HEADER);
-		} catch (IOException | ClassNotFoundException e) {
-			ConsoleHelper.printRed("Register user failed");
-		}
-		return null;
+	public synchronized void removeSession(SessionID sessionId) {
+		ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
+		
+		otrEngine.removeConnection(sessionId.getUserID());
+		this.openSessions.remove(sessionId.getAccountID());
 	}
 
 	private class ConnectionListener implements Runnable {
@@ -161,8 +154,8 @@ public final class ChatClient implements Runnable {
 				}
 			}			
 		}
-		
 	}
+	
 	private class ConnectionHandler implements Runnable {
 		private final Socket connection;
 		
@@ -188,9 +181,14 @@ public final class ChatClient implements Runnable {
 				InetSocketAddress address = (InetSocketAddress) dataMap.get(DataType.ADDRESS);
 				otrEngine.addExistingConnection(address.toString(), connection);
 				SessionID sessionId = new SessionID(username, address.toString(), CLIENT_PROTOCOL);
-				Session session = sessionManager.getSession(sessionId);
-				ChatSession secureSession = new ChatSession(network, session, inputStream);
-				openSessions.put(username, secureSession);
+				if (openSessions.containsKey(username)) {
+					throw new IllegalStateException("Multiple incoming connections from same host.");
+				}
+				Session session = new SessionImpl(sessionId, ClientOtrEngine.getInstance(network));
+				ChatSession secureSession = new ChatSession(network, session);
+				if (secureSession.receiveEncryptedConnection(inputStream)) {
+					openSessions.put(username, secureSession);
+				}
 			} catch (IOException | ClassNotFoundException e) {
 				e.printStackTrace();
 			}

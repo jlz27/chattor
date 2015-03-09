@@ -39,11 +39,6 @@ import org.bouncycastle.openpgp.operator.bc.BcPublicKeyDataDecryptorFactory;
 import org.bouncycastle.openpgp.operator.bc.BcPublicKeyKeyEncryptionMethodGenerator;
 import org.bouncycastle.util.encoders.Base64Encoder;
 
-import protocol.DataType;
-import protocol.Message;
-import protocol.MessageType;
-import services.KeyManager;
-
 public final class Util {
 
 	public static char[] readPassword() {

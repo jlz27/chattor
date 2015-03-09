@@ -6,7 +6,6 @@ import java.io.ObjectInputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SignedObject;
-import java.util.List;
 
 import org.bouncycastle.util.encoders.Base64Encoder;
 
@@ -14,7 +13,6 @@ import services.KeyManager;
 import util.ConsoleHelper;
 import util.Util;
 import net.java.otr4j.OtrException;
-import net.java.otr4j.session.OtrFragmenter;
 import net.java.otr4j.session.Session;
 import net.java.otr4j.session.SessionID;
 import net.java.otr4j.session.SessionStatus;
@@ -24,24 +22,14 @@ public final class ChatSession {
 	private final TorNetwork network;
 	private final Session session;
 	private final Base64Encoder encoder;
-	/*
-	 * Starts a new outgoing connection
-	 */
-	public ChatSession(TorNetwork network, Session session, SignedObject header) {
-		this.network = network;
-		this.session = session;
-		this.encoder = new Base64Encoder();
-		startEncryptedSession(session, header);
-	}
 
-	public ChatSession(TorNetwork network, Session session, ObjectInputStream inputStream) {
+	public ChatSession(TorNetwork network, Session session) {
 		this.network = network;
 		this.session = session;
 		this.encoder = new Base64Encoder();
-		receiveEncryptedConnection(session, inputStream);
 	}
 	
-	private void startEncryptedSession(Session session, SignedObject header) {
+	public boolean startEncryptedSession(SignedObject header) {
 		ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
 		KeyManager keyManager = KeyManager.getKeyManager(network);
 		SessionID sessionID = session.getSessionID();
@@ -69,17 +57,18 @@ public final class ChatSession {
 			if (session.getSessionStatus() != SessionStatus.ENCRYPTED) {
 				session.endSession();
 				ConsoleHelper.printRed("Failed to encrypt outgoing session.");
-				return;
+				return false;
 			}
 			startLisenter(ois);
-			ConsoleHelper.printGreen("Outgoing session [" + sessionID.getAccountID() + "] encrypted and authenticated.");
+			ConsoleHelper.printGreen("Outgoing session [" + sessionID.getAccountID() + "] encrypted and authenticated.", true);
+			return true;
 		} catch (IOException | OtrException | ClassNotFoundException e) {
 			throw new RuntimeException(e);
 		}
 	
 	}
 	
-	private void receiveEncryptedConnection(Session session, ObjectInputStream inputStream) {
+	public boolean receiveEncryptedConnection(ObjectInputStream inputStream) {
 		String username = session.getSessionID().getAccountID();
 		try {
 			// 1. OTR Query
@@ -97,7 +86,7 @@ public final class ChatSession {
 			if (session.getSessionStatus() != SessionStatus.ENCRYPTED) {
 				ConsoleHelper.printRed("Failed to encrypt incoming session.");
 				session.endSession();
-				return;
+				return false;
 			}
 			// send challenge to verify identity
 			KeyManager keyManager = KeyManager.getKeyManager(network);
@@ -114,13 +103,14 @@ public final class ChatSession {
 			if (!plainText.equals(challengeResponse)) {
 				ConsoleHelper.printRed("Failed to authenticate incoming session.");
 				session.endSession();
-				return;
+				return false;
 			}
 
 			startLisenter(inputStream);
-			ConsoleHelper.printGreen("Incoming session [" + username + "] encrypted and authenticated");
+			ConsoleHelper.printGreen("Incoming session [" + username + "] encrypted and authenticated", true);
+			return true;
 		} catch (IOException | ClassNotFoundException | OtrException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 	}
 	
@@ -136,7 +126,7 @@ public final class ChatSession {
 				otrEngine.injectMessage(session.getSessionID(), s);
 			}
 		} catch (OtrException | IOException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 	}
 	
@@ -147,9 +137,8 @@ public final class ChatSession {
 			encoder.decode(base64Message, baos);
 			return new String(baos.toByteArray(), StandardCharsets.UTF_8);
 		} catch (OtrException | IOException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
-		return null;
 	}
 
 	public void startLisenter(ObjectInputStream inputStream) {
@@ -170,9 +159,12 @@ public final class ChatSession {
 			while (true) {
 				try {
 					String message = (String) inputStream.readObject();
-					System.out.println(username + ": " + processMessage(message));
+					ConsoleHelper.printGreen(username + ": ", false);
+					System.out.println(processMessage(message));
 				} catch (ClassNotFoundException | IOException e) {
-					e.printStackTrace();
+					// session terminated, remove all connections
+					ConsoleHelper.printBlue("Session [" +  session.getSessionID().getAccountID() + "] terminated.");
+					ChatClient.getInstance().removeSession(session.getSessionID());
 					break;
 				}
 			}			

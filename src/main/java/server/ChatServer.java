@@ -7,12 +7,11 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
+import java.net.URL;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
-import java.security.SecureRandom;
 import java.security.SignedObject;
 import java.security.UnrecoverableEntryException;
 import java.security.cert.CertificateException;
@@ -24,7 +23,6 @@ import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 
-import org.bouncycastle.openpgp.PGPPublicKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +31,6 @@ import protocol.DataType;
 import protocol.Message;
 import protocol.MessageType;
 import services.KeyManager;
-import services.PgpService;
 import util.Configuration;
 import util.ObjectSigner;
 import util.Util;
@@ -46,6 +43,7 @@ public final class ChatServer {
 	private static final String TOR_ADDR = "127.0.0.1";
 	private static final int TOR_PORT = 9050;
 	private static final int SERVER_PORT = 15000;
+	private static final int MAX_CONNECTIONS = 100;
 	private static final Logger LOGGER = LoggerFactory.getLogger(ChatServer.class);
 
 	private PrivateKey privateKey;
@@ -56,7 +54,6 @@ public final class ChatServer {
 	
 	public static void main(String[] args) throws IOException, KeyStoreException,
 			NoSuchAlgorithmException, CertificateException, UnrecoverableEntryException {
-		Configuration.initialize(args[0]);
 		char[] password = Util.readPassword();
 		System.setProperty("javax.net.ssl.keyStore", Configuration.KEYSTORE);
 		System.setProperty("javax.net.ssl.keyStoreType", Configuration.KEYSTORE_TYPE);
@@ -69,10 +66,10 @@ public final class ChatServer {
 		FileInputStream keyStoreFile = new FileInputStream(Configuration.KEYSTORE);
 		ks.load(keyStoreFile, password);
 		KeyStore.ProtectionParameter protParam = new KeyStore.PasswordProtection(password);
-		KeyStore.PrivateKeyEntry pkEntry = (KeyStore.PrivateKeyEntry) ks.getEntry(Configuration.SECRET_KEY, protParam);
+		KeyStore.PrivateKeyEntry pkEntry = (KeyStore.PrivateKeyEntry) ks.getEntry(Configuration.SERVER_SECRET_KEY, protParam);
 		PrivateKey myPrivateKey = pkEntry.getPrivateKey();
 		
-		new ChatServer(myPrivateKey, Configuration.MAX_CONNECTIONS).run();
+		new ChatServer(myPrivateKey, MAX_CONNECTIONS).run();
 	}
 	
 	public ChatServer(PrivateKey privateKey, int maxThreads) throws IOException {

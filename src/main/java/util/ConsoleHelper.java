@@ -23,8 +23,12 @@ public final class ConsoleHelper {
 		System.out.println(ANSI_BLUE + message + ANSI_RESET);
 	}
 	
-	public static void printGreen(String message) {
-		System.out.println(ANSI_GREEN + message + ANSI_RESET);
+	public static void printGreen(String message, boolean newLine) {
+		if (newLine) {
+			System.out.println(ANSI_GREEN + message + ANSI_RESET);
+		} else {
+			System.out.print(ANSI_GREEN + message + ANSI_RESET);
+		}
 	}
 	
 	public static void printCyan(String message) {

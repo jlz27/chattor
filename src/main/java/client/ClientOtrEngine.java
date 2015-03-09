@@ -24,6 +24,7 @@ public final class ClientOtrEngine implements OtrEngineHost {
 	private final OtrPolicy policy;
 	private final TorNetwork network;
 	private final Map<String, ObjectOutputStream> activeOutputStreams;
+	private final KeyPairGenerator keyGenerator;
 	
 	public synchronized static ClientOtrEngine getInstance(TorNetwork network) {
 		if (otrEngine == null) {
@@ -31,15 +32,22 @@ public final class ClientOtrEngine implements OtrEngineHost {
 		}
 		return otrEngine;
 	}
+	
 	private ClientOtrEngine(TorNetwork network) {
 		this.policy = new OtrPolicyImpl(OtrPolicy.ALLOW_V2 | OtrPolicy.ALLOW_V3
 				| OtrPolicy.ERROR_START_AKE);
 		this.network = network;
 		this.activeOutputStreams = new ConcurrentHashMap<String, ObjectOutputStream>();
+		try {
+			this.keyGenerator = KeyPairGenerator.getInstance("DSA");
+			this.keyGenerator.initialize(1024);
+		} catch (NoSuchAlgorithmException e) {
+			throw new RuntimeException(e);
+		}
 	}
 	
 	@Override
-	public void injectMessage(SessionID sessionID, String msg)
+	public synchronized void injectMessage(SessionID sessionID, String msg)
 			throws OtrException {
 		ObjectOutputStream oos = activeOutputStreams.get(sessionID.getUserID());
 		if (oos == null) {
@@ -52,7 +60,7 @@ public final class ClientOtrEngine implements OtrEngineHost {
 		}
 	}
 	
-	public void addExistingConnection(String userId, Socket connection) {
+	public synchronized void addExistingConnection(String userId, Socket connection) {
 		ObjectOutputStream oos;
 		try {
 			oos = new ObjectOutputStream(connection.getOutputStream());
@@ -62,7 +70,7 @@ public final class ClientOtrEngine implements OtrEngineHost {
 		}
 	}
 	
-	public Socket createConnection(SessionID sessionID, Object object) {
+	public synchronized Socket createConnection(SessionID sessionID, Object object) {
 		String userID = sessionID.getUserID();
 		if (activeOutputStreams.containsKey(userID)) {
 			throw new RuntimeException("Connection already exists.");
@@ -79,76 +87,59 @@ public final class ClientOtrEngine implements OtrEngineHost {
 		}
 	}
 
+	public synchronized void removeConnection(String userId) {
+		this.activeOutputStreams.remove(userId);
+	}
+	
+	@Override
+	public OtrPolicy getSessionPolicy(SessionID sessionID) {
+		return this.policy;
+	}
+	
+	@Override
+	public KeyPair getLocalKeyPair(SessionID sessionID) throws OtrException {
+		return this.keyGenerator.genKeyPair();
+	}
+
 	@Override
 	public void unreadableMessageReceived(SessionID sessionID)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void unencryptedMessageReceived(SessionID sessionID, String msg)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void showError(SessionID sessionID, String error)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void smpError(SessionID sessionID, int tlvType, boolean cheated)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void smpAborted(SessionID sessionID) throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void finishedSessionMessage(SessionID sessionID, String msgText)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void requireEncryptedMessage(SessionID sessionID, String msgText)
 			throws OtrException {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public OtrPolicy getSessionPolicy(SessionID sessionID) {
-		return this.policy;
 	}
 
 	@Override
 	public FragmenterInstructions getFragmenterInstructions(SessionID sessionID) {
 		return null;
 	}
-
-	@Override
-	public KeyPair getLocalKeyPair(SessionID sessionID) throws OtrException {
-		KeyPairGenerator kg;
-		try {
-			kg = KeyPairGenerator.getInstance("DSA");
-		} catch (NoSuchAlgorithmException e) {
-			e.printStackTrace();
-			return null;
-		}
-		return kg.genKeyPair();
-	}
-
+	
 	@Override
 	public byte[] getLocalFingerprintRaw(SessionID sessionID) {
 		return null;
@@ -157,44 +148,31 @@ public final class ClientOtrEngine implements OtrEngineHost {
 	@Override
 	public void askForSecret(SessionID sessionID, InstanceTag receiverTag,
 			String question) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void verify(SessionID sessionID, String fingerprint, boolean approved) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void unverify(SessionID sessionID, String fingerprint) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public String getReplyForUnreadableMessage(SessionID sessionID) {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public String getFallbackMessage(SessionID sessionID) {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public void messageFromAnotherInstanceReceived(SessionID sessionID) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void multipleInstancesDetected(SessionID sessionID) {
-		// TODO Auto-generated method stub
-		
 	}
-
 }

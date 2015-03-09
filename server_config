@@ -1,8 +1,0 @@
-keyStore keystore/key_server
-keyStoreType JCEKS
-trustStore keystore/trust_client1
-trustStoreType JCEKS
-keyServerList keyserver_list.txt
-secretKey server_key
-maxConnections 100
-
