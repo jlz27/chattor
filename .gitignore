@@ -3,3 +3,4 @@
 .settings
 target
 *.asc
+dependency-reduced-pom.xml

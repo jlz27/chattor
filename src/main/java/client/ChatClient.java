@@ -24,7 +24,6 @@ import util.Configuration;
 import util.ConsoleHelper;
 import util.ObjectSigner;
 import util.Util;
-import net.java.otr4j.OtrException;
 import net.java.otr4j.session.Session;
 import net.java.otr4j.session.SessionID;
 import net.java.otr4j.session.SessionImpl;
