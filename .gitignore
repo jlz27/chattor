@@ -1,5 +1,5 @@
 .project
 .classpath
 .settings
-hidden_dir
 target
+*.asc
