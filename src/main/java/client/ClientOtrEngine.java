@@ -60,13 +60,16 @@ public final class ClientOtrEngine implements OtrEngineHost {
 		}
 	}
 	
-	public synchronized void addExistingConnection(String userId, Socket connection) {
+	public synchronized void addExistingConnection(String userId, Socket connection) throws IllegalStateException {
+		if (activeOutputStreams.containsKey(userId)) {
+			throw new IllegalStateException("Session already exists");
+		}
 		ObjectOutputStream oos;
 		try {
 			oos = new ObjectOutputStream(connection.getOutputStream());
 			activeOutputStreams.put(userId, oos);
 		} catch (IOException e) {
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
 	}
 	

@@ -24,6 +24,7 @@ import util.Configuration;
 import util.ConsoleHelper;
 import util.ObjectSigner;
 import util.Util;
+import net.java.otr4j.OtrException;
 import net.java.otr4j.session.Session;
 import net.java.otr4j.session.SessionID;
 import net.java.otr4j.session.SessionImpl;
@@ -89,6 +90,10 @@ public final class ChatClient implements Runnable {
 					case "/n" :
 					{
 						String destName = split[1];
+						if (this.clientName.equals(destName)) {
+							ConsoleHelper.printRed("Cannot open connection to self.");
+							continue;
+						}
 						if (!this.openSessions.containsKey(destName)) {
 							InetSocketAddress destHost = ClientUtils.resolveUser(network, destName);
 							if (destHost == null) {
@@ -102,6 +107,8 @@ public final class ChatClient implements Runnable {
 								continue;
 							}
 							this.openSessions.put(destName, secureSession);
+						} else {
+							ConsoleHelper.printGreen("Using existing connection.", true);
 						}
 						curUser = destName;
 						if (split.length > 2) {
@@ -136,10 +143,12 @@ public final class ChatClient implements Runnable {
 	}
 	
 	public synchronized void removeSession(SessionID sessionId) {
-		ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
-		
-		otrEngine.removeConnection(sessionId.getUserID());
-		this.openSessions.remove(sessionId.getAccountID());
+		if (sessionId != null) {
+			ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
+			
+			otrEngine.removeConnection(sessionId.getUserID());
+			this.openSessions.remove(sessionId.getAccountID());
+		}
 	}
 
 	private class ConnectionListener implements Runnable {
@@ -167,6 +176,7 @@ public final class ChatClient implements Runnable {
 			ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
 			KeyManager keyManager = KeyManager.getKeyManager(network);
 			ObjectInputStream inputStream;
+			SessionID sessionId = null;
 			try {
 				inputStream = new ObjectInputStream(this.connection.getInputStream());
 				
@@ -180,7 +190,7 @@ public final class ChatClient implements Runnable {
 				String username = (String) dataMap.get(DataType.USERNAME);
 				InetSocketAddress address = (InetSocketAddress) dataMap.get(DataType.ADDRESS);
 				otrEngine.addExistingConnection(address.toString(), connection);
-				SessionID sessionId = new SessionID(username, address.toString(), CLIENT_PROTOCOL);
+				sessionId = new SessionID(username, address.toString(), CLIENT_PROTOCOL);
 				if (openSessions.containsKey(username)) {
 					throw new IllegalStateException("Multiple incoming connections from same host.");
 				}
@@ -189,7 +199,13 @@ public final class ChatClient implements Runnable {
 				if (secureSession.receiveEncryptedConnection(inputStream)) {
 					openSessions.put(username, secureSession);
 				}
-			} catch (IOException | ClassNotFoundException e) {
+			} catch (Exception e) {
+				try {
+					connection.close();
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				}
+				removeSession(sessionId);
 				e.printStackTrace();
 			}
 		}

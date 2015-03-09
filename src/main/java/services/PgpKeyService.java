@@ -51,7 +51,7 @@ public final class PgpKeyService {
 				}
 			}
 		} catch (IOException | ParseException | PGPException e) {
-			throw new RuntimeException(e);
+			e.printStackTrace();
 		}
 		return null;
 	}

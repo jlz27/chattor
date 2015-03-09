@@ -7,7 +7,6 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.URL;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -23,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 
+import org.bouncycastle.openpgp.PGPPublicKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -122,7 +122,11 @@ public final class ChatServer {
 			try {
 				String plainText = Util.getRandomChallenge();
 				Message challenge = new Message(MessageType.CHALLENGE);
-				byte[] cipherText = Util.encrypt(plainText, keyService.getPgpPublicKey(username));
+				PGPPublicKey pgpPublicKey = keyService.getPgpPublicKey(username);
+				if (pgpPublicKey == null) {
+					return false;
+				}
+				byte[] cipherText = Util.encrypt(plainText, pgpPublicKey);
 				challenge.addData(DataType.CHALLENGE_DATA, cipherText);
 				oos.writeObject(challenge);
 				

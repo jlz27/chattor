@@ -82,6 +82,7 @@ public final class ClientUtils {
 			}
 			return (SignedObject) headerResponse.getData().get(DataType.ADDRESS_HEADER);
 		} catch (IOException | ClassNotFoundException e) {
+			e.printStackTrace();
 			ConsoleHelper.printRed("Register user failed");
 		}
 		return null;

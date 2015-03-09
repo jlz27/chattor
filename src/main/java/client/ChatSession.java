@@ -33,9 +33,9 @@ public final class ChatSession {
 		ClientOtrEngine otrEngine = ClientOtrEngine.getInstance(network);
 		KeyManager keyManager = KeyManager.getKeyManager(network);
 		SessionID sessionID = session.getSessionID();
-		byte[] encrypted = Util.encrypt(header, keyManager.getPgpPublicKey(sessionID.getAccountID()));
-		Socket connection = otrEngine.createConnection(sessionID, encrypted);
 		try {
+			byte[] encrypted = Util.encrypt(header, keyManager.getPgpPublicKey(sessionID.getAccountID()));
+			Socket connection = otrEngine.createConnection(sessionID, encrypted);
 			ObjectInputStream ois = new ObjectInputStream(connection.getInputStream());
 			session.startSession();
 			// 1. DH Commit
@@ -63,6 +63,7 @@ public final class ChatSession {
 			ConsoleHelper.printGreen("Outgoing session [" + sessionID.getAccountID() + "] encrypted and authenticated.", true);
 			return true;
 		} catch (IOException | OtrException | ClassNotFoundException e) {
+			ChatClient.getInstance().removeSession(sessionID);
 			throw new RuntimeException(e);
 		}
 	
@@ -110,6 +111,7 @@ public final class ChatSession {
 			ConsoleHelper.printGreen("Incoming session [" + username + "] encrypted and authenticated", true);
 			return true;
 		} catch (IOException | ClassNotFoundException | OtrException e) {
+			ChatClient.getInstance().removeSession(session.getSessionID());
 			throw new RuntimeException(e);
 		}
 	}
